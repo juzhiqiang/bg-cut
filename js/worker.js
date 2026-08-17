@@ -44,11 +44,23 @@ function importScriptsFallback() {
     try {
       importScripts('ort.all.min.js');
       ortLib = self.ort;
-      // 显式指定 wasm 文件路径 (与 worker 同目录)
+      // 显式指定 wasm 文件路径 (与 worker 同目录, 本地优先)
       ortLib.env.wasm.wasmPaths = new URL('.', self.location.href).href;
       resolve();
     } catch (e) { reject(e); }
   });
+}
+
+/* 检测本地 jsep.wasm 是否存在, 404 则 fallback jsDelivr CDN */
+async function ensureWasmPaths() {
+  const base = new URL('.', self.location.href).href;
+  try {
+    const r = await fetch(base + 'ort-wasm-simd-threaded.jsep.wasm', { method: 'HEAD' });
+    if (r.ok) return; // 本地可用
+  } catch (e) { /* network error, try CDN */ }
+  // CDN fallback (jsDelivr npm, 无 GitHub 20MB 限制)
+  ortLib.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/';
+  console.log('[worker] jsep.wasm not local, using jsDelivr CDN');
 }
 
 /* ---------- 带进度 fetch ---------- */
@@ -85,6 +97,7 @@ async function loadModel(modelKey) {
     return;
   }
   await ensureOrt();
+  await ensureWasmPaths();
   const cfg = MODELS[modelKey];
   let buf = null;
   let lastErr = null;
